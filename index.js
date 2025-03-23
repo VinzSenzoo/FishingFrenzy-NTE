@@ -863,62 +863,6 @@ function showProxySelection(proxies, newToken, accountLabel) {
 }
 
 
-function showProxySelection(proxies, newToken, accountLabel) {
-  const proxyContainer = blessed.box({
-    parent: screen,
-    top: "center",
-    left: "center",
-    width: "50%",
-    height: "50%",
-    border: { type: "line" },
-    label: "Select Proxy",
-    tags: true
-  });
-  const proxyList = blessed.list({
-    parent: proxyContainer,
-    top: 1,
-    left: 1,
-    width: '95%',
-    height: '70%',
-    keys: true,
-    mouse: true,
-    vi: true,
-    items: proxies.map(p => p === activeProxy ? `${p} [Active]` : p),
-    tags: true,
-    style: { selected: { bg: 'green', fg: 'black' } }
-  });
-  const cancelButton = blessed.button({
-    parent: proxyContainer,
-    bottom: 1,
-    left: 'center',
-    width: 10,
-    height: 1,
-    content: ' Cancel ',
-    align: 'center',
-    mouse: true,
-    keys: true,
-    shrink: true,
-    style: { bg: 'red' }
-  });
-  proxyList.focus();
-  screen.render();
-  proxyList.on("select", (pItem, pIndex) => {
-    proxyContainer.destroy();
-    screen.render();
-    activeProxy = proxies[pIndex];
-    activeToken = newToken;
-    addLog(`Changed account to: ${accountLabel} with proxy: ${activeProxy}`);
-    updateUserInfo();
-    mainMenu.select(0);
-    mainMenu.focus();
-    screen.render();
-  });
-  cancelButton.on("press", () => {
-    proxyContainer.destroy();
-    screen.render();
-    showProxyPrompt(newToken, accountLabel);
-  });
-}
 
 async function autoFishing() {
   showFishingPopup();
