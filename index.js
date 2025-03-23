@@ -96,9 +96,9 @@ const headerBox = blessed.box({
 figlet.text("NT EXHAUST", { font: "Speed" }, (err, data) => {
   let asciiBanner = "";
   if (!err) {
-    asciiBanner = `{center}{bold}{green-fg}${data}{/green-fg}{/bold}{/center}`;
+    asciiBanner = `{center}{bold}{bright-cyan-fg}${data}{/bright-cyan-fg}{/bold}{/center}`;
   } else {
-    asciiBanner = "{center}{bold}NT EXHAUST{/bold}{/center}";
+    asciiBanner = "{center}{bold}{bright-cyan-fg}NT EXHAUST{/bright-cyan-fg}{/bold}{/center}";
   }
 
   const descriptionText = "{center}{bold}{bright-yellow-fg}✦ . ── Fishing Frenzy Auto Bot!! ── .✦{/bright-yellow-fg}{/bold}{/center}";
