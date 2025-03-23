@@ -239,19 +239,28 @@ function updateMenuItems() {
     mainMenu.setItems([
       "{gray-fg}Auto Complete Task{/gray-fg}",
       "{gray-fg}Auto Fishing{/gray-fg}",
-      "{gray-fg}Auto Complete Daily Checkin & Task {/gray-fg}",
-      "{gray-fg}Changed Account{/gray-fg}",
-      "Stop Process",
+      "{gray-fg}Auto Complete Daily Checkin & Task{/gray-fg}",
+      "{gray-fg}Changed account{/gray-fg}",
       "Clear Logs",
+      "Stop Process",
       "Refresh",
       "Exit"
     ]);
   } else {
-    mainMenu.setItems(normalMenuItems);
+    mainMenu.setItems([
+      "Auto Complete Task",
+      "Auto Fishing",
+      "Auto Complete Daily Checkin & Task",
+      "Changed account",
+      "Clear Logs",
+      "Refresh",
+      "Exit"
+    ]);
   }
   mainMenu.select(0);
   safeRender();
 }
+
 
 async function autoCompleteTask() {
   try {
@@ -843,27 +852,17 @@ async function autoFishing() {
 mainMenu.on("select", (item) => {
   const text = item.getText();
   
-  if ((autoTaskRunning || autoFishingRunning || autoDailyRunning) && text.includes("(disabled)")) {
-    addLog("{yellow-fg}Sedang ada proses yang berjalan. Tunggu selesai atau pilih Stop Process.{/yellow-fg}");
+  if ((autoTaskRunning || autoFishingRunning || autoDailyRunning) && text !== "Stop Process") {
+    addLog("{yellow-fg}Sedang ada proses yang berjalan. Tunggu proses selesai atau pilih 'Stop Process'.{/yellow-fg}");
     return;
   }
-
+  
   if (text === "Stop Process") {
     autoProcessCancelled = true;
     addLog("{red-fg}Stop Process diterima. Proses akan dihentikan.{/red-fg}");
     return;
   }
-  
-  if (autoTaskRunning && text === "Auto Complete Task") {
-    addLog("{yellow-fg}Proses Auto Complete Task sedang berjalan.Tunggu selesai atau pilih Stop Process{/yellow-fg}");
-    return;
-  }
-  if (autoFishingRunning && text === "Auto Fishing") {
-    addLog("{yellow-fg}Proses Auto Fishing sedang berjalan.Tunggu selesai atau pilih Stop Process{/yellow-fg}");
-    return;
-  }
-  
-  switch (text) {
+    switch (text) {
     case "Auto Complete Task":
       autoCompleteTask();
       break;
