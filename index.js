@@ -840,18 +840,29 @@ function showProxySelection(proxies, newToken, accountLabel) {
 async function autoFishing() {
   showFishingPopup();
 }
-
 mainMenu.on("select", (item) => {
   const text = item.getText();
+  
   if ((autoTaskRunning || autoFishingRunning || autoDailyRunning) && text.includes("(disabled)")) {
     addLog("{yellow-fg}Sedang ada proses yang berjalan. Tunggu selesai atau pilih Stop Process.{/yellow-fg}");
     return;
   }
+
   if (text === "Stop Process") {
     autoProcessCancelled = true;
     addLog("{red-fg}Stop Process diterima. Proses akan dihentikan.{/red-fg}");
     return;
   }
+  
+  if (autoTaskRunning && text === "Auto Complete Task") {
+    addLog("{yellow-fg}Proses Auto Complete Task sedang berjalan.Tunggu selesai atau pilih Stop Process{/yellow-fg}");
+    return;
+  }
+  if (autoFishingRunning && text === "Auto Fishing") {
+    addLog("{yellow-fg}Proses Auto Fishing sedang berjalan.Tunggu selesai atau pilih Stop Process{/yellow-fg}");
+    return;
+  }
+  
   switch (text) {
     case "Auto Complete Task":
       autoCompleteTask();
@@ -869,7 +880,6 @@ mainMenu.on("select", (item) => {
       clearLogs();
       break;
     case "Refresh":
-      addLog('Refreshed..');
       updateUserInfo();
       break;
     case "Exit":
@@ -879,6 +889,7 @@ mainMenu.on("select", (item) => {
       addLog("{red-fg}Menu tidak dikenali atau tidak ada aksi.{/red-fg}");
   }
 });
+
 
 screen.key(["escape", "q", "C-c"], () => process.exit(0));
 
