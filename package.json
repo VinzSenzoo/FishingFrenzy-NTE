@@ -1,7 +1,7 @@
 {
   "name": "NT Exhaust",
   "version": "1.0.0",
-  "description": "Bot Auto Swap dan Claim Faucet untuk Somnia Testnet",
+  "description": "Fishing Frenzy Auto Bot",
   "main": "index.js",
   "type": "module",
   "scripts": {
