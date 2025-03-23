@@ -1,0 +1,17 @@
+{
+  "name": "NT Exhaust",
+  "version": "1.0.0",
+  "description": "Bot Auto Swap dan Claim Faucet untuk Somnia Testnet",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "figlet": "^1.8.0",
+    "https-proxy-agent": "^7.0.6",
+    "node-fetch": "^3.3.2",
+    "ws": "^8.18.1"
+  }
+}

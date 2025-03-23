@@ -1,0 +1,4 @@
+htto://ip:port
+http://username:password@ip:port
+socks5://ip:port
+socks5://username:password@ip:port
