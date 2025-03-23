@@ -71,6 +71,8 @@ let autoTaskRunning = false;
 let autoFishingRunning = false;
 let autoDailyRunning = false;
 let autoProcessCancelled = false;
+let accountPromptActive = false;
+
 
 const normalMenuItems = [
   "Auto Complete Task",
@@ -678,12 +680,16 @@ function showFishingPopup() {
 }
 
 async function changedAccount() {
+  if (accountPromptActive) return;
+  accountPromptActive = true;
+
   const allTokens = fs.readFileSync("token.txt", "utf8")
     .split("\n")
     .map(line => line.trim())
     .filter(line => line !== "");
   if (allTokens.length === 0) {
     addLog("{red-fg}Tidak ada akun pada token.txt{/red-fg}");
+    accountPromptActive = false;
     return;
   }
   const reqHeaders = getRequestHeaders();
@@ -714,7 +720,7 @@ async function changedAccount() {
     vi: true,
     items: accountItems.map(item => item.label),
     tags: true,
-    style: { selected: { bg: "cyan", fg: "black" } }
+    style: { selected: { bg: "green", fg: "black" } }
   });
   screen.append(accountList);
   accountList.focus();
@@ -730,7 +736,14 @@ async function changedAccount() {
       mainMenu.select(0);
       mainMenu.focus();
       screen.render();
+      accountPromptActive = false; 
     }
+  });
+
+  accountList.key("escape", () => {
+    screen.remove(accountList);
+    screen.render();
+    accountPromptActive = false;
   });
 }
 
@@ -742,13 +755,13 @@ function showProxyPrompt(newToken, accountLabel) {
     width: "50%",
     height: "40%",
     border: { type: "line" },
-    label: "Ingin Gunakan proxy?",
+    label: "Gunakan proxy?",
     keys: true,
     mouse: true,
     vi: true,
     items: ["No", "Yes"],
     tags: true,
-    style: { selected: { bg: "magenta", fg: "black" } }
+    style: { selected: { bg: "green", fg: "black" } }
   });
   screen.append(proxyPrompt);
   proxyPrompt.focus();
@@ -756,7 +769,7 @@ function showProxyPrompt(newToken, accountLabel) {
   proxyPrompt.on("select", async (pItem, pIndex) => {
     proxyPrompt.destroy();
     screen.render();
-    if (pIndex === 1) {
+    if (pIndex === 1) { 
       let proxies = [];
       try {
         proxies = fs.readFileSync("proxy.txt", "utf8")
@@ -774,6 +787,7 @@ function showProxyPrompt(newToken, accountLabel) {
         mainMenu.select(0);
         mainMenu.focus();
         screen.render();
+        accountPromptActive = false;
       } else {
         showProxySelection(proxies, newToken, accountLabel);
       }
@@ -785,9 +799,69 @@ function showProxyPrompt(newToken, accountLabel) {
       mainMenu.select(0);
       mainMenu.focus();
       screen.render();
+      accountPromptActive = false;
     }
   });
 }
+
+function showProxySelection(proxies, newToken, accountLabel) {
+  const proxyContainer = blessed.box({
+    parent: screen,
+    top: "center",
+    left: "center",
+    width: "50%",
+    height: "50%",
+    border: { type: "line" },
+    label: "Select Proxy",
+    tags: true
+  });
+  const proxyList = blessed.list({
+    parent: proxyContainer,
+    top: 1,
+    left: 1,
+    width: '95%',
+    height: '70%',
+    keys: true,
+    mouse: true,
+    vi: true,
+    items: proxies.map(p => p === activeProxy ? `${p} [Active]` : p),
+    tags: true,
+    style: { selected: { bg: 'green', fg: 'black' } }
+  });
+  const cancelButton = blessed.button({
+    parent: proxyContainer,
+    bottom: 1,
+    left: 'center',
+    width: 10,
+    height: 1,
+    content: ' Cancel ',
+    align: 'center',
+    mouse: true,
+    keys: true,
+    shrink: true,
+    style: { bg: 'red' }
+  });
+  proxyList.focus();
+  screen.render();
+  proxyList.on("select", (pItem, pIndex) => {
+    proxyContainer.destroy();
+    screen.render();
+    activeProxy = proxies[pIndex];
+    activeToken = newToken;
+    addLog(`Changed account to: ${accountLabel} with proxy: ${activeProxy}`);
+    updateUserInfo();
+    mainMenu.select(0);
+    mainMenu.focus();
+    screen.render();
+    accountPromptActive = false;
+  });
+  cancelButton.on("press", () => {
+    proxyContainer.destroy();
+    screen.render();
+    showProxyPrompt(newToken, accountLabel);
+  });
+}
+
 
 function showProxySelection(proxies, newToken, accountLabel) {
   const proxyContainer = blessed.box({
