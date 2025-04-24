@@ -6,12 +6,41 @@ import { HttpsProxyAgent } from "https-proxy-agent";
 import fetch from "node-fetch";
 
 let currentEnergy = 0;
+let is5xEnabled = false;
 const tokens = fs.readFileSync("token.txt", "utf8")
   .split("\n")
   .map(line => line.trim())
   .filter(line => line !== "");
 let activeToken = tokens.length > 0 ? tokens[0] : "";
 let activeProxy = null;
+const RONIN_REEF_END_TIME = new Date("2025-05-08T23:59:00+07:00").getTime();
+const standardRewards = {
+  "Sardine": {
+    quality: 1,
+    sellPrice: 6,
+    expGain: 2500
+  },
+  "Stingray": {
+    quality: 4,
+    sellPrice: 43.8,
+    expGain: 17500
+  }
+};
+
+function isRoninReefEventActive() {
+  const now = new Date().getTime();
+  return now < RONIN_REEF_END_TIME;
+}
+function getRemainingEventTime() {
+  const now = new Date().getTime();
+  const distance = RONIN_REEF_END_TIME - now;
+  if (distance <= 0) return "Event telah berakhir";
+  const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+  return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+}
 
 function getShortAddress(address) {
   if (!address || address.length < 10) return address;
@@ -59,6 +88,23 @@ async function getExternalIP() {
   }
 }
 
+
+async function switchToRoninReefTheme() {
+  try {
+    const response = await fetch("https://api.fishingfrenzy.co/v1/events/6809a675a27bdd9f98123e90/themes/6809a66da27bdd9f98123e16/switch", {
+      method: "GET",
+      headers: getRequestHeaders(),
+      agent: getAgent()
+    });
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    addLog("{blue-fg}Berhasil beralih ke Ronin Reef Theme.{/blue-fg}");
+    return true;
+  } catch (err) {
+    addLog(`{red-fg}Gagal beralih ke Ronin Reef Theme: ${err.message}{/red-fg}`);
+    return false;
+  }
+}
+
 const screen = blessed.screen({
   smartCSR: true,
   title: "MT Exhaust",
@@ -71,13 +117,12 @@ let autoTaskRunning = false;
 let autoFishingRunning = false;
 let autoDailyRunning = false;
 let autoProcessCancelled = false;
-let accountPromptActive = false;
-
 
 const normalMenuItems = [
   "Auto Complete Task",
   "Auto Fishing",
   "Auto Complete Daily Checkin & Task",
+  "Boost x5 Reward",
   "Changed account",
   "Clear Logs",
   "Refresh",
@@ -88,30 +133,28 @@ const headerBox = blessed.box({
   top: 0,
   left: "center",
   width: "100%",
-  height: 5, 
+  height: 5,
   tags: true,
   style: { fg: "white" }
 });
 
-figlet.text("NT EXHAUST", { font: "Speed" }, (err, data) => {
-  let asciiBanner = "";
-  if (!err) {
-    asciiBanner = `{center}{bold}{bright-cyan-fg}${data}{/bright-cyan-fg}{/bold}{/center}`;
-  } else {
-    asciiBanner = "{center}{bold}{bright-cyan-fg}NT EXHAUST{/bright-cyan-fg}{/bold}{/center}";
-  }
-
+figlet.text("NT EXHAUST", { font: "ANSI Shadow" }, (err, data) => {
+    let asciiBanner = "";
+    if (!err) {
+      asciiBanner = `{center}{bold}{cyan-fg}${data}{/cyan-fg}{/bold}{/center}`;
+    } else {
+      asciiBanner = "{center}{bold}NT EXHAUST{/bold}{/center}";
+    }   
   const descriptionText = "{center}{bold}{bright-yellow-fg}✦ . ── Fishing Frenzy Auto Bot!! ── .✦{/bright-yellow-fg}{/bold}{/center}";
   headerBox.setContent(`${asciiBanner}\n${descriptionText}`);
 
   const totalLines = headerBox.getContent().split("\n").length;
-  headerContentHeight = totalLines + 1; 
+  headerContentHeight = totalLines + 1;
   adjustLayout();
   screen.render();
 });
 
 screen.append(headerBox);
-
 
 const logsBox = blessed.box({
   label: " Logs ",
@@ -146,8 +189,9 @@ const userInfoBox = blessed.box({
     "Gold: loading...\n" +
     "Energy: loading...\n" +
     "EXP: loading...\n" +
-    "IP: loading..."
-});
+    "IP: loading...\n" +
+    "Event Ronin End: loading..."
+}); 
 
 const mainMenu = blessed.list({
   label: " Menu ",
@@ -221,48 +265,38 @@ async function updateUserInfo() {
       const externalIP = await getExternalIP();
       ipLine = `IP: ${externalIP}`;
     }
+    const eventTime = isRoninReefEventActive() ? getRemainingEventTime() : "Ronin Reef Event Ended";
     const content = `Username: ${data.username}
 Wallet: ${getShortAddress(data.walletAddress)}
 Level: ${data.level}
 Gold: ${data.gold}
 Energy: ${data.energy}
 EXP: ${data.exp !== undefined ? data.exp : "N/A"}
-${ipLine}`;
+${ipLine}
+Event: ${eventTime}`;
     userInfoBox.setContent(content);
     safeRender();
-    addLog("{bright-yellow-fg}User information updated.{/bright-yellow-fg}");
+    addLog(`{bright-yellow-fg}User information updated. Booster x5 Reward: ${is5xEnabled ? 'Aktif' : 'Nonaktif'}{/bright-yellow-fg}`);
   } catch (err) {
     addLog(`{red-fg}Error fetching user information: ${err.message}{/red-fg}`);
   }
 }
 
 function updateMenuItems() {
-  if (autoTaskRunning || autoFishingRunning || autoDailyRunning) {
-    mainMenu.setItems([
-      "{gray-fg}Auto Complete Task{/gray-fg}",
-      "{gray-fg}Auto Fishing{/gray-fg}",
-      "{gray-fg}Auto Complete Daily Checkin & Task{/gray-fg}",
-      "{gray-fg}Changed account{/gray-fg}",
-      "Clear Logs",
-      "Stop Process",
-      "Refresh",
-      "Exit"
-    ]);
-  } else {
-    mainMenu.setItems([
-      "Auto Complete Task",
-      "Auto Fishing",
-      "Auto Complete Daily Checkin & Task",
-      "Changed account",
-      "Clear Logs",
-      "Refresh",
-      "Exit"
-    ]);
+  let menuItems = [...normalMenuItems];
+  if (isRoninReefEventActive()) {
+    menuItems.splice(2, 0, "Auto Fishing Ronin Reef Theme");
   }
+  if (autoTaskRunning || autoFishingRunning || autoDailyRunning) {
+    menuItems = menuItems.map(item =>
+      item === "Stop Process" ? item : `{gray-fg}${item}{/gray-fg}`
+    );
+    menuItems.push("Stop Process");
+  }
+  mainMenu.setItems(menuItems);
   mainMenu.select(0);
   safeRender();
 }
-
 
 async function autoCompleteTask() {
   try {
@@ -414,7 +448,7 @@ async function autoCompleteDailyCheckinAndTask() {
   screen.render();
 }
 
-async function fish(range) {
+async function fish(range, isRoninReef = false) {
   return new Promise((resolve, reject) => {
     const token = activeToken;
     const agent = getAgent();
@@ -431,21 +465,22 @@ async function fish(range) {
       if (ws.readyState === WebSocket.OPEN) ws.close();
       resolve(false);
     }, 30000);
+
     ws.on('open', () => {
       ws.send(JSON.stringify({
         cmd: 'prepare',
         range: range.toLowerCase().replace(' ', '_'),
-        is5x: false
+        is5x: is5xEnabled
       }));
     });
+
     ws.on('message', (data) => {
       try {
         const message = JSON.parse(data.toString());
         if (message.type === 'initGame') {
           gameStarted = true;
           ws.send(JSON.stringify({ cmd: 'start' }));
-        }
-        if (message.type === 'gameState') {
+        } else if (message.type === 'gameState') {
           const frame = message.frame || 0;
           const direction = message.dir || 0;
           const x = 450 + frame * 2 + direction * 5;
@@ -481,31 +516,80 @@ async function fish(range) {
             ws.send(JSON.stringify(endCommand));
             endSent = true;
           }
-        }
-        if (message.type === 'gameOver') {
+        } else if (message.type === 'gameOver') {
           gameSuccess = message.success;
           clearTimeout(timeout);
           ws.close();
           if (gameSuccess) {
             const fishInfo = message.catchedFish.fishInfo;
-            addLog(`{green-fg}Berhasil Mendapatkan Ikan{/green-fg} {bold}${fishInfo.fishName}{/bold} (quality: ${fishInfo.quality}) worth {bold}${fishInfo.sellPrice}{/bold} coins and {bold}${fishInfo.expGain} XP{/bold}!`);
+            const sellPrice = fishInfo.sellPrice;
+            const expGain = fishInfo.expGain;
+            const expBonus = message.catchedFish.refunds?.expBonus || 0;
+            const is5xConfirmed = message.is5x || false;
+            const scales = fishInfo.eventAttributes?.value || 0;
+            let normalSellPrice = sellPrice;
+            let normalExpGain = expGain;
+            if (is5xConfirmed) {
+              normalSellPrice = sellPrice / 5;
+              normalExpGain = expGain / 5;
+            }
+
+            const fishKey = fishInfo.fishName;
+            const fishQuality = fishInfo.quality;
+            if (!standardRewards[fishKey] || standardRewards[fishKey].quality !== fishQuality) {
+              standardRewards[fishKey] = {
+                quality: fishQuality,
+                sellPrice: normalSellPrice,
+                expGain: normalExpGain
+              };
+            }
+
+            const standardReward = standardRewards[fishKey]?.quality === fishQuality ? standardRewards[fishKey] : null;
+            if (is5xEnabled && is5xConfirmed && standardReward) {
+              const expectedSellPrice = standardReward.sellPrice * 5;
+              const expectedExpGain = standardReward.expGain * 5;
+              if (sellPrice !== expectedSellPrice || expGain !== expectedExpGain) {
+                addLog(`{red-fg}Warning: Reward tidak sesuai dengan x5. Diterima: ${sellPrice} coins, ${expGain} XP. Diharapkan: ${expectedSellPrice} coins, ${expectedExpGain} XP.{/red-fg}`);
+              }
+            } else if (is5xEnabled && !is5xConfirmed) {
+              addLog(`{red-fg}Warning: x5 diaktifkan tetapi server tidak mengonfirmasi x5. Menonaktifkan x5.{/red-fg}`);
+              is5xEnabled = false;
+            }
+
+            let logMessage = `{green-fg}Berhasil menangkap ikan: ${fishInfo.fishName} (Quality: ${fishQuality}), Koin: ${sellPrice}, EXP: ${expGain}`;
+            if (expBonus > 0) {
+              logMessage += ` (+${expBonus} Bonus)`;
+            }
+            if (isRoninReef && scales > 0) {
+              logMessage += `, Scales: ${scales}`;
+            }
+            logMessage += `{/green-fg}`;
+            addLog(logMessage);
+
+            resolve(gameSuccess);
           } else {
-            addLog("{red-fg}Failed to catch fish{/red-fg}");
+            addLog("{red-fg}Gagal menangkap ikan.{/red-fg}");
+            resolve(false);
           }
-          resolve(gameSuccess);
         }
       } catch (err) {
-        addLog(`{red-fg}Error parsing WS message: ${err.message}{/red-fg}`);
+        addLog(`{red-fg}Error parsing WebSocket message: ${err.message}{/red-fg}`);
+        resolve(false);
       }
     });
+
     ws.on('error', (error) => {
       clearTimeout(timeout);
       addLog(`{red-fg}WebSocket error: ${error.message}{/red-fg}`);
       resolve(false);
     });
+
     ws.on('close', () => {
       clearTimeout(timeout);
-      if (!gameStarted) resolve(false);
+      if (!gameStarted) {
+        addLog("{red-fg}WebSocket closed before game started.{/red-fg}");
+        resolve(false);
+      }
     });
   });
 }
@@ -542,31 +626,28 @@ function showCountdown(seconds) {
 }
 
 async function processFishing(range, energyCost, times) {
-  addLog(`{yellow-fg}Auto Fishing dimulai:{/yellow-fg} {bold}{bright-cyan-fg}${range}{/bright-cyan-fg}{/bold} sebanyak {bold}{bright-cyan-fg}${times}{/bright-cyan-fg}{/bold} kali Mancing`);
+  addLog(`{yellow-fg}Memulai Auto Fishing: ${range} sebanyak ${times} kali${is5xEnabled ? ' [x5]' : ''}{/yellow-fg}`);
   for (let i = 1; i <= times; i++) {
     if (autoProcessCancelled) {
-      addLog("{yellow-fg}Proses Auto Fishing Telah Dibatalkan.{/yellow-fg}");
+      addLog("{yellow-fg}Proses Auto Fishing dibatalkan.{/yellow-fg}");
       break;
     }
-    addLog(`{yellow-fg}Mancing dengan jarak{/yellow-fg} {bold}{bright-cyan-fg}${range}{/bright-cyan-fg}{/bold} ({bold}{bright-cyan-fg}${energyCost} Energy{/bright-cyan-fg}{/bold})`);
+    if (currentEnergy < energyCost) {
+      addLog(`{red-fg}Energi tidak cukup! Diperlukan: ${energyCost}, Tersedia: ${currentEnergy}{/red-fg}`);
+      break;
+    }
     let success = false;
     try {
       success = await fish(range);
     } catch (err) {
       addLog(`{red-fg}Error saat mancing: ${err.message}{/red-fg}`);
     }
-    if (success) {
-      addLog("{green-fg}Proses mancing berhasil.{/green-fg}");
-    } else {
-      addLog("{red-fg}Proses mancing gagal.{/red-fg}");
-    }
     await updateUserInfo();
-    addLog(`{bright-green-fg}Mancing Mania Telah Selesai ${i}/${times}{/bright-green-fg}`);
     if (i < times && !autoProcessCancelled) {
       await showCountdown(5);
     }
   }
-  addLog(`{green-fg}Auto Fishing selesai: ${range}{/green-fg}`);
+  addLog(`{green-fg}Auto Fishing selesai: ${range}${is5xEnabled ? ' [x5]' : ''}{/green-fg}`);
   autoFishingRunning = false;
   updateMenuItems();
   mainMenu.select(0);
@@ -574,7 +655,54 @@ async function processFishing(range, energyCost, times) {
   screen.render();
 }
 
-function showFishingPopup() {
+async function processFishingRoninReef(range, energyCost, times) {
+  addLog(`{yellow-fg}Memulai Auto Fishing Ronin Reef: ${range} sebanyak ${times} kali${is5xEnabled ? ' [x5]' : ''}{/yellow-fg}`);
+  const switched = await switchToRoninReefTheme();
+  if (!switched) {
+    addLog("{red-fg}Proses Auto Fishing Ronin Reef dibatalkan karena gagal beralih tema.{/red-fg}");
+    autoFishingRunning = false;
+    updateMenuItems();
+    mainMenu.select(0);
+    mainMenu.focus();
+    screen.render();
+    return;
+  }
+  for (let i = 1; i <= times; i++) {
+    if (autoProcessCancelled) {
+      addLog("{yellow-fg}Proses Auto Fishing Ronin Reef dibatalkan.{/yellow-fg}");
+      break;
+    }
+    if (currentEnergy < energyCost) {
+      addLog(`{red-fg}Energi tidak cukup! Diperlukan: ${energyCost}, Tersedia: ${currentEnergy}{/red-fg}`);
+      break;
+    }
+    let success = false;
+    try {
+      success = await fish(range, true);
+    } catch (err) {
+      addLog(`{red-fg}Error saat mancing di Ronin Reef: ${err.message}{/red-fg}`);
+    }
+    await updateUserInfo();
+    if (i < times && !autoProcessCancelled) {
+      await showCountdown(5);
+    }
+  }
+  addLog(`{green-fg}Auto Fishing Ronin Reef selesai: ${range}${is5xEnabled ? ' [x5]' : ''}{/green-fg}`);
+  autoFishingRunning = false;
+  updateMenuItems();
+  mainMenu.select(0);
+  mainMenu.focus();
+  screen.render();
+}
+
+function showFishingPopup(isRoninReef = false) {
+  if (isRoninReef && !isRoninReefEventActive()) {
+    addLog("{red-fg}Auto Fishing Ronin Reef Theme tidak tersedia karena event telah berakhir.{/red-fg}");
+    mainMenu.select(0);
+    mainMenu.focus();
+    screen.render();
+    return;
+  }
   const fishingContainer = blessed.box({
     parent: screen,
     top: 'center',
@@ -582,7 +710,7 @@ function showFishingPopup() {
     width: '50%',
     height: '50%',
     border: { type: "line" },
-    label: "Select Fishing Range",
+    label: isRoninReef ? "Select Ronin Reef Fishing Range" : "Select Fishing Range",
     tags: true,
     style: { border: { fg: 'magenta' } }
   });
@@ -596,9 +724,9 @@ function showFishingPopup() {
     mouse: true,
     vi: true,
     items: [
-      'Short Range (1 Energy)',
-      'Mid Range   (2 Energy)',
-      'Long Range  (3 Energy)'
+      `Short Range (${is5xEnabled ? 5 : 1} Energy)`,
+      `Mid Range   (${is5xEnabled ? 10 : 2} Energy)`,
+      `Long Range  (${is5xEnabled ? 15 : 3} Energy)`
     ],
     tags: true,
     style: { selected: { bg: 'magenta', fg: 'black' } }
@@ -621,11 +749,12 @@ function showFishingPopup() {
   fishingList.on('select', (item, index) => {
     fishingContainer.destroy();
     screen.render();
-    let range, energyCost;
-    if (index === 0) { range = 'Short Range'; energyCost = 1; }
-    else if (index === 1) { range = 'Mid Range'; energyCost = 2; }
-    else if (index === 2) { range = 'Long Range'; energyCost = 3; }
-    addLog(`{bright-yellow-fg}Range dipilih:{/bright-yellow-fg} {bold}{bright-cyan-fg}${range}{/bright-cyan-fg}{/bold} (Cost per fishing: {bold}{bright-cyan-fg}${energyCost}{/bright-cyan-fg}{/bold} Energy)`);
+    let range, baseEnergyCost;
+    if (index === 0) { range = 'Short Range'; baseEnergyCost = 1; }
+    else if (index === 1) { range = 'Mid Range'; baseEnergyCost = 2; }
+    else if (index === 2) { range = 'Long Range'; baseEnergyCost = 3; }
+    const energyCost = is5xEnabled ? baseEnergyCost * 5 : baseEnergyCost;
+    addLog(`{bright-yellow-fg}Range dipilih:{/bright-yellow-fg} {bold}{bright-cyan-fg}${range}{/bright-cyan-fg}{/bold} (Cost per fishing: {bold}{bright-cyan-fg}${energyCost}{/bright-cyan-fg}{/bold} Energy${is5xEnabled ? ' [x5]' : ''})`);
     promptBox.setFront();
     screen.render();
     promptBox.readInput("Masukkan jumlah berapa kali mancing:", "", async (err, value) => {
@@ -658,7 +787,11 @@ function showFishingPopup() {
       mainMenu.select(0);
       mainMenu.focus();
       screen.render();
-      await processFishing(range, energyCost, times);
+      if (isRoninReef) {
+        await processFishingRoninReef(range, energyCost, times);
+      } else {
+        await processFishing(range, energyCost, times);
+      }
     });
   });
   cancelButton.on('press', () => {
@@ -679,17 +812,21 @@ function showFishingPopup() {
   });
 }
 
-async function changedAccount() {
-  if (accountPromptActive) return;
-  accountPromptActive = true;
+function autoFishing() {
+  showFishingPopup();
+}
 
+function autoFishingRoninReef() {
+  showFishingPopup(true);
+}
+
+async function changedAccount() {
   const allTokens = fs.readFileSync("token.txt", "utf8")
     .split("\n")
     .map(line => line.trim())
     .filter(line => line !== "");
   if (allTokens.length === 0) {
     addLog("{red-fg}Tidak ada akun pada token.txt{/red-fg}");
-    accountPromptActive = false;
     return;
   }
   const reqHeaders = getRequestHeaders();
@@ -720,7 +857,7 @@ async function changedAccount() {
     vi: true,
     items: accountItems.map(item => item.label),
     tags: true,
-    style: { selected: { bg: "green", fg: "black" } }
+    style: { selected: { bg: "cyan", fg: "black" } }
   });
   screen.append(accountList);
   accountList.focus();
@@ -736,14 +873,7 @@ async function changedAccount() {
       mainMenu.select(0);
       mainMenu.focus();
       screen.render();
-      accountPromptActive = false; 
     }
-  });
-
-  accountList.key("escape", () => {
-    screen.remove(accountList);
-    screen.render();
-    accountPromptActive = false;
   });
 }
 
@@ -755,13 +885,13 @@ function showProxyPrompt(newToken, accountLabel) {
     width: "50%",
     height: "40%",
     border: { type: "line" },
-    label: "Gunakan proxy?",
+    label: "Ingin Gunakan proxy?",
     keys: true,
     mouse: true,
     vi: true,
     items: ["No", "Yes"],
     tags: true,
-    style: { selected: { bg: "green", fg: "black" } }
+    style: { selected: { bg: "magenta", fg: "black" } }
   });
   screen.append(proxyPrompt);
   proxyPrompt.focus();
@@ -769,7 +899,7 @@ function showProxyPrompt(newToken, accountLabel) {
   proxyPrompt.on("select", async (pItem, pIndex) => {
     proxyPrompt.destroy();
     screen.render();
-    if (pIndex === 1) { 
+    if (pIndex === 1) {
       let proxies = [];
       try {
         proxies = fs.readFileSync("proxy.txt", "utf8")
@@ -787,7 +917,6 @@ function showProxyPrompt(newToken, accountLabel) {
         mainMenu.select(0);
         mainMenu.focus();
         screen.render();
-        accountPromptActive = false;
       } else {
         showProxySelection(proxies, newToken, accountLabel);
       }
@@ -799,7 +928,6 @@ function showProxyPrompt(newToken, accountLabel) {
       mainMenu.select(0);
       mainMenu.focus();
       screen.render();
-      accountPromptActive = false;
     }
   });
 }
@@ -853,7 +981,6 @@ function showProxySelection(proxies, newToken, accountLabel) {
     mainMenu.select(0);
     mainMenu.focus();
     screen.render();
-    accountPromptActive = false;
   });
   cancelButton.on("press", () => {
     proxyContainer.destroy();
@@ -862,33 +989,36 @@ function showProxySelection(proxies, newToken, accountLabel) {
   });
 }
 
-
-
-async function autoFishing() {
-  showFishingPopup();
-}
 mainMenu.on("select", (item) => {
-  const text = item.getText();
-  
+  const text = item.getText().replace(/{[^}]+}/g, ''); 
   if ((autoTaskRunning || autoFishingRunning || autoDailyRunning) && text !== "Stop Process") {
-    addLog("{yellow-fg}Sedang ada proses yang berjalan. Tunggu proses selesai atau pilih 'Stop Process'.{/yellow-fg}");
+    addLog("{yellow-fg}Sedang ada proses yang berjalan. Tunggu selesai atau pilih Stop Process.{/yellow-fg}");
     return;
   }
-  
   if (text === "Stop Process") {
     autoProcessCancelled = true;
     addLog("{red-fg}Stop Process diterima. Proses akan dihentikan.{/red-fg}");
     return;
   }
-    switch (text) {
+  switch (text) {
     case "Auto Complete Task":
       autoCompleteTask();
       break;
     case "Auto Fishing":
       autoFishing();
       break;
+    case "Auto Fishing Ronin Reef Theme":
+      autoFishingRoninReef();
+      break;
     case "Auto Complete Daily Checkin & Task":
       autoCompleteDailyCheckinAndTask();
+      break;
+    case "Boost x5 Reward":
+      is5xEnabled = !is5xEnabled;
+      addLog(`{bright-yellow-fg}Fitur x5: ${is5xEnabled ? 'Aktif' : 'Nonaktif'}{/bright-yellow-fg}`);
+      if (is5xEnabled) {
+        addLog("{yellow-fg}Catatan: Fitur Reward x5 Telah Diaktifkan Maka Penggunaan Energy Juga x5.{/yellow-fg}");
+      }
       break;
     case "Changed account":
       changedAccount();
@@ -897,6 +1027,7 @@ mainMenu.on("select", (item) => {
       clearLogs();
       break;
     case "Refresh":
+      addLog('Refreshed..');
       updateUserInfo();
       break;
     case "Exit":
@@ -906,7 +1037,6 @@ mainMenu.on("select", (item) => {
       addLog("{red-fg}Menu tidak dikenali atau tidak ada aksi.{/red-fg}");
   }
 });
-
 
 screen.key(["escape", "q", "C-c"], () => process.exit(0));
 
