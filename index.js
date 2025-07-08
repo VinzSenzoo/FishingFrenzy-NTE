@@ -13,34 +13,6 @@ const tokens = fs.readFileSync("token.txt", "utf8")
   .filter(line => line !== "");
 let activeToken = tokens.length > 0 ? tokens[0] : "";
 let activeProxy = null;
-const RONIN_REEF_END_TIME = new Date("2025-05-08T23:59:00+07:00").getTime();
-const standardRewards = {
-  "Sardine": {
-    quality: 1,
-    sellPrice: 6,
-    expGain: 2500
-  },
-  "Stingray": {
-    quality: 4,
-    sellPrice: 43.8,
-    expGain: 17500
-  }
-};
-
-function isRoninReefEventActive() {
-  const now = new Date().getTime();
-  return now < RONIN_REEF_END_TIME;
-}
-function getRemainingEventTime() {
-  const now = new Date().getTime();
-  const distance = RONIN_REEF_END_TIME - now;
-  if (distance <= 0) return "Event telah berakhir";
-  const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-  return `${days}d ${hours}h ${minutes}m ${seconds}s`;
-}
 
 function getShortAddress(address) {
   if (!address || address.length < 10) return address;
@@ -85,23 +57,6 @@ async function getExternalIP() {
     return data.ip;
   } catch (err) {
     return "Unavailable";
-  }
-}
-
-
-async function switchToRoninReefTheme() {
-  try {
-    const response = await fetch("https://api.fishingfrenzy.co/v1/events/6809a675a27bdd9f98123e90/themes/6809a66da27bdd9f98123e16/switch", {
-      method: "GET",
-      headers: getRequestHeaders(),
-      agent: getAgent()
-    });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    addLog("{blue-fg}Berhasil beralih ke Ronin Reef Theme.{/blue-fg}");
-    return true;
-  } catch (err) {
-    addLog(`{red-fg}Gagal beralih ke Ronin Reef Theme: ${err.message}{/red-fg}`);
-    return false;
   }
 }
 
@@ -189,8 +144,7 @@ const userInfoBox = blessed.box({
     "Gold: loading...\n" +
     "Energy: loading...\n" +
     "EXP: loading...\n" +
-    "IP: loading...\n" +
-    "Event Ronin End: loading..."
+    "IP: loading..."
 }); 
 
 const mainMenu = blessed.list({
@@ -265,15 +219,13 @@ async function updateUserInfo() {
       const externalIP = await getExternalIP();
       ipLine = `IP: ${externalIP}`;
     }
-    const eventTime = isRoninReefEventActive() ? getRemainingEventTime() : "Ronin Reef Event Ended";
     const content = `Username: ${data.username}
 Wallet: ${getShortAddress(data.walletAddress)}
 Level: ${data.level}
 Gold: ${data.gold}
 Energy: ${data.energy}
 EXP: ${data.exp !== undefined ? data.exp : "N/A"}
-${ipLine}
-Event: ${eventTime}`;
+${ipLine}`;
     userInfoBox.setContent(content);
     safeRender();
     addLog(`{bright-yellow-fg}User information updated. Booster x5 Reward: ${is5xEnabled ? 'Aktif' : 'Nonaktif'}{/bright-yellow-fg}`);
@@ -284,9 +236,6 @@ Event: ${eventTime}`;
 
 function updateMenuItems() {
   let menuItems = [...normalMenuItems];
-  if (isRoninReefEventActive()) {
-    menuItems.splice(2, 0, "Auto Fishing Ronin Reef Theme");
-  }
   if (autoTaskRunning || autoFishingRunning || autoDailyRunning) {
     menuItems = menuItems.map(item =>
       item === "Stop Process" ? item : `{gray-fg}${item}{/gray-fg}`
@@ -394,7 +343,7 @@ async function autoCompleteDailyCheckinAndTask() {
   }
 
   try {
-    const questsResponse = await fetch("https://api.fishingfrenzy.co/v1/user-quests", {
+    const questsResponse = await fetch("https://api.fishingfr steamed.co/v1/user-quests", {
       method: "GET",
       headers: getRequestHeaders(),
       agent: getAgent()
@@ -448,7 +397,7 @@ async function autoCompleteDailyCheckinAndTask() {
   screen.render();
 }
 
-async function fish(range, isRoninReef = false) {
+async function fish(range) {
   return new Promise((resolve, reject) => {
     const token = activeToken;
     const agent = getAgent();
@@ -464,13 +413,14 @@ async function fish(range, isRoninReef = false) {
       addLog("{yellow-fg}Fishing timeout - closing connection{/yellow-fg}");
       if (ws.readyState === WebSocket.OPEN) ws.close();
       resolve(false);
-    }, 30000);
+    }, 60000);
 
     ws.on('open', () => {
       ws.send(JSON.stringify({
         cmd: 'prepare',
         range: range.toLowerCase().replace(' ', '_'),
-        is5x: is5xEnabled
+        is5x: is5xEnabled,
+        themeId:"6752b7a7ef93f2489cfef709",
       }));
     });
 
@@ -526,46 +476,12 @@ async function fish(range, isRoninReef = false) {
             const expGain = fishInfo.expGain;
             const expBonus = message.catchedFish.refunds?.expBonus || 0;
             const is5xConfirmed = message.is5x || false;
-            const scales = fishInfo.eventAttributes?.value || 0;
-            let normalSellPrice = sellPrice;
-            let normalExpGain = expGain;
-            if (is5xConfirmed) {
-              normalSellPrice = sellPrice / 5;
-              normalExpGain = expGain / 5;
-            }
-
-            const fishKey = fishInfo.fishName;
-            const fishQuality = fishInfo.quality;
-            if (!standardRewards[fishKey] || standardRewards[fishKey].quality !== fishQuality) {
-              standardRewards[fishKey] = {
-                quality: fishQuality,
-                sellPrice: normalSellPrice,
-                expGain: normalExpGain
-              };
-            }
-
-            const standardReward = standardRewards[fishKey]?.quality === fishQuality ? standardRewards[fishKey] : null;
-            if (is5xEnabled && is5xConfirmed && standardReward) {
-              const expectedSellPrice = standardReward.sellPrice * 5;
-              const expectedExpGain = standardReward.expGain * 5;
-              if (sellPrice !== expectedSellPrice || expGain !== expectedExpGain) {
-                addLog(`{red-fg}Warning: Reward tidak sesuai dengan x5. Diterima: ${sellPrice} coins, ${expGain} XP. Diharapkan: ${expectedSellPrice} coins, ${expectedExpGain} XP.{/red-fg}`);
-              }
-            } else if (is5xEnabled && !is5xConfirmed) {
-              addLog(`{red-fg}Warning: x5 diaktifkan tetapi server tidak mengonfirmasi x5. Menonaktifkan x5.{/red-fg}`);
-              is5xEnabled = false;
-            }
-
-            let logMessage = `{green-fg}Berhasil menangkap ikan: ${fishInfo.fishName} (Quality: ${fishQuality}), Koin: ${sellPrice}, EXP: ${expGain}`;
+            let logMessage = `{green-fg}Berhasil menangkap ikan: ${fishInfo.fishName} (Quality: ${fishInfo.quality}), Koin: ${sellPrice}, EXP: ${expGain}`;
             if (expBonus > 0) {
               logMessage += ` (+${expBonus} Bonus)`;
             }
-            if (isRoninReef && scales > 0) {
-              logMessage += `, Scales: ${scales}`;
-            }
             logMessage += `{/green-fg}`;
             addLog(logMessage);
-
             resolve(gameSuccess);
           } else {
             addLog("{red-fg}Gagal menangkap ikan.{/red-fg}");
@@ -655,54 +571,7 @@ async function processFishing(range, energyCost, times) {
   screen.render();
 }
 
-async function processFishingRoninReef(range, energyCost, times) {
-  addLog(`{yellow-fg}Memulai Auto Fishing Ronin Reef: ${range} sebanyak ${times} kali${is5xEnabled ? ' [x5]' : ''}{/yellow-fg}`);
-  const switched = await switchToRoninReefTheme();
-  if (!switched) {
-    addLog("{red-fg}Proses Auto Fishing Ronin Reef dibatalkan karena gagal beralih tema.{/red-fg}");
-    autoFishingRunning = false;
-    updateMenuItems();
-    mainMenu.select(0);
-    mainMenu.focus();
-    screen.render();
-    return;
-  }
-  for (let i = 1; i <= times; i++) {
-    if (autoProcessCancelled) {
-      addLog("{yellow-fg}Proses Auto Fishing Ronin Reef dibatalkan.{/yellow-fg}");
-      break;
-    }
-    if (currentEnergy < energyCost) {
-      addLog(`{red-fg}Energi tidak cukup! Diperlukan: ${energyCost}, Tersedia: ${currentEnergy}{/red-fg}`);
-      break;
-    }
-    let success = false;
-    try {
-      success = await fish(range, true);
-    } catch (err) {
-      addLog(`{red-fg}Error saat mancing di Ronin Reef: ${err.message}{/red-fg}`);
-    }
-    await updateUserInfo();
-    if (i < times && !autoProcessCancelled) {
-      await showCountdown(5);
-    }
-  }
-  addLog(`{green-fg}Auto Fishing Ronin Reef selesai: ${range}${is5xEnabled ? ' [x5]' : ''}{/green-fg}`);
-  autoFishingRunning = false;
-  updateMenuItems();
-  mainMenu.select(0);
-  mainMenu.focus();
-  screen.render();
-}
-
-function showFishingPopup(isRoninReef = false) {
-  if (isRoninReef && !isRoninReefEventActive()) {
-    addLog("{red-fg}Auto Fishing Ronin Reef Theme tidak tersedia karena event telah berakhir.{/red-fg}");
-    mainMenu.select(0);
-    mainMenu.focus();
-    screen.render();
-    return;
-  }
+function showFishingPopup() {
   const fishingContainer = blessed.box({
     parent: screen,
     top: 'center',
@@ -710,7 +579,7 @@ function showFishingPopup(isRoninReef = false) {
     width: '50%',
     height: '50%',
     border: { type: "line" },
-    label: isRoninReef ? "Select Ronin Reef Fishing Range" : "Select Fishing Range",
+    label: "Select Fishing Range",
     tags: true,
     style: { border: { fg: 'magenta' } }
   });
@@ -787,11 +656,7 @@ function showFishingPopup(isRoninReef = false) {
       mainMenu.select(0);
       mainMenu.focus();
       screen.render();
-      if (isRoninReef) {
-        await processFishingRoninReef(range, energyCost, times);
-      } else {
-        await processFishing(range, energyCost, times);
-      }
+      await processFishing(range, energyCost, times);
     });
   });
   cancelButton.on('press', () => {
@@ -814,10 +679,6 @@ function showFishingPopup(isRoninReef = false) {
 
 function autoFishing() {
   showFishingPopup();
-}
-
-function autoFishingRoninReef() {
-  showFishingPopup(true);
 }
 
 async function changedAccount() {
@@ -1006,9 +867,6 @@ mainMenu.on("select", (item) => {
       break;
     case "Auto Fishing":
       autoFishing();
-      break;
-    case "Auto Fishing Ronin Reef Theme":
-      autoFishingRoninReef();
       break;
     case "Auto Complete Daily Checkin & Task":
       autoCompleteDailyCheckinAndTask();
