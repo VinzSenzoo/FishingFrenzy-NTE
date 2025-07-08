@@ -343,7 +343,7 @@ async function autoCompleteDailyCheckinAndTask() {
   }
 
   try {
-    const questsResponse = await fetch("https://api.fishingfr steamed.co/v1/user-quests", {
+    const questsResponse = await fetch("https://api.fishingfrenzy.co/v1/user-quests", {
       method: "GET",
       headers: getRequestHeaders(),
       agent: getAgent()
